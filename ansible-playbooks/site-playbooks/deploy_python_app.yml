@@ -1,0 +1,65 @@
+---
+- name: Deploy DevOps Lab Python App container (Docker CLI)
+  hosts: ubuntu,rocky
+  become: true
+
+  vars:
+    app_name: devops-lab-python-app
+    app_image: devops-lab-python-app:1.0
+    app_port: 8000
+    app_dir: /opt/devops-lab/python-app
+
+  tasks:
+    - name: Ensure docker service is running
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Create app directory
+      ansible.builtin.file:
+        path: "{{ app_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Copy app.py
+      ansible.builtin.copy:
+        src: ../../docker-projects/python-app/app.py
+        dest: "{{ app_dir }}/app.py"
+        mode: "0644"
+
+    - name: Copy Dockerfile
+      ansible.builtin.copy:
+        src: ../../docker-projects/python-app/Dockerfile
+        dest: "{{ app_dir }}/Dockerfile"
+        mode: "0644"
+
+    - name: Build Docker image on target (Docker CLI)
+      ansible.builtin.command:
+        cmd: "docker build -t {{ app_image }} ."
+        chdir: "{{ app_dir }}"
+      register: docker_build
+      changed_when: "'Successfully built' in docker_build.stdout or 'writing image' in docker_build.stdout or docker_build.rc == 0"
+
+    - name: Stop/remove existing container if present
+      ansible.builtin.command:
+        cmd: "docker rm -f {{ app_name }}"
+      register: rm_container
+      failed_when: false
+      changed_when: rm_container.rc == 0
+
+    - name: Run container (Docker CLI)
+      ansible.builtin.command:
+        cmd: "docker run -d --restart unless-stopped --name {{ app_name }} -p {{ app_port }}:8000 {{ app_image }}"
+      register: run_container
+      changed_when: run_container.rc == 0
+
+    - name: Show container status
+      ansible.builtin.command:
+        cmd: "docker ps --filter name={{ app_name }} "
+      register: container_status
+      changed_when: false
+
+    - name: Print container status
+      ansible.builtin.debug:
+        var: container_status.stdout_lines  
